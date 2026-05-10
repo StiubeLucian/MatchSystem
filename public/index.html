@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZEM Sumo – Organizer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          colors: {
+            brand: { DEFAULT: '#f59e0b', dark: '#d97706', light: '#fde68a' }
+          }
+        }
+      }
+    }
+  </script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { background: #0f172a; color: #f8fafc; }
+    .pulse-ring { animation: pulseRing 1.4s ease-out infinite; }
+    @keyframes pulseRing {
+      0%   { box-shadow: 0 0 0 0 rgba(245,158,11,0.5); }
+      70%  { box-shadow: 0 0 0 12px rgba(245,158,11,0); }
+      100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); }
+    }
+    .fade-in { animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+  </style>
+</head>
+<body class="font-sans min-h-screen">
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const api = {
+  get:    (url)       => fetch(url).then(r => r.json()),
+  post:   (url, body) => fetch(url, { method: 'POST',   headers: {'Content-Type':'application/json'}, body: JSON.stringify(body||{}) }).then(r => r.json()),
+  put:    (url, body) => fetch(url, { method: 'PUT',    headers: {'Content-Type':'application/json'}, body: JSON.stringify(body||{}) }).then(r => r.json()),
+  delete: (url)       => fetch(url, { method: 'DELETE' }).then(r => r.json()),
+};
+
+function teamName(state, id) {
+  return (state.teams.find(t => t.id === id) || {}).name || '?';
+}
+
+function RoundDots({ match }) {
+  const dots = [];
+  for (let i = 0; i < 3; i++) {
+    const r = match.rounds[i];
+    let cls = 'w-4 h-4 rounded-full border-2 ';
+    if (!r) cls += 'border-slate-600 bg-transparent';
+    else if (r.winner === 'team1') cls += 'border-blue-400 bg-blue-400';
+    else cls += 'border-red-400 bg-red-400';
+    dots.push(<span key={i} className={cls} title={r ? (r.winner === 'team1' ? 'Left team' : 'Right team') : 'Not played'} />);
+  }
+  return <div className="flex gap-1 items-center">{dots}</div>;
+}
+
+function StatusBadge({ status }) {
+  const map = {
+    pending: 'bg-slate-700 text-slate-300',
+    playing: 'bg-amber-500 text-slate-900 pulse-ring',
+    done:    'bg-green-700 text-green-100',
+  };
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide ${map[status]}`}>
+      {status === 'playing' ? '▶ LIVE' : status}
+    </span>
+  );
+}
+
+// ── Setup Phase ───────────────────────────────────────────────────────────────
+
+function SetupPhase({ state, reload }) {
+  const [name, setName] = useState('');
+  const [err,  setErr]  = useState('');
+  const inputRef = useRef();
+
+  async function addTeam(e) {
+    e.preventDefault();
+    setErr('');
+    const res = await api.post('/api/teams', { name });
+    if (res.error) { setErr(res.error); return; }
+    setName('');
+    inputRef.current?.focus();
+    reload();
+  }
+
+  async function removeTeam(id) {
+    await api.delete(`/api/teams/${id}`);
+    reload();
+  }
+
+  async function startGroup() {
+    if (!window.confirm('Start the Group Phase? No more teams can be added.')) return;
+    const res = await api.post('/api/start-group');
+    if (res.error) { alert(res.error); return; }
+    reload();
+  }
+
+  const canStart = state.teams.length >= 4;
+  const totalMatches = state.teams.length * (state.teams.length - 1) / 2;
+
+  return (
+    <div className="max-w-xl mx-auto fade-in">
+      <div className="bg-slate-800 rounded-2xl p-6 mb-4 border border-slate-700">
+        <h2 className="text-xl font-bold mb-4 text-brand">Add Teams</h2>
+        <form onSubmit={addTeam} className="flex gap-2 mb-4">
+          <input
+            ref={inputRef}
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="Team name…"
+            className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-brand"
+          />
+          <button type="submit" disabled={!name.trim()}
+            className="bg-brand text-slate-900 font-bold px-5 py-2 rounded-lg disabled:opacity-40 hover:bg-brand-dark transition-colors">
+            Add
+          </button>
+        </form>
+        {err && <p className="text-red-400 text-sm mb-3">{err}</p>}
+
+        {state.teams.length === 0 ? (
+          <p className="text-slate-500 text-center py-6">No teams yet. Add at least 4 to start.</p>
+        ) : (
+          <ul className="space-y-2">
+            {state.teams.map((t, i) => (
+              <li key={t.id} className="flex items-center justify-between bg-slate-700 rounded-lg px-4 py-2">
+                <span className="flex items-center gap-3">
+                  <span className="text-slate-400 text-sm w-5 text-right">{i + 1}.</span>
+                  <span className="font-semibold">{t.name}</span>
+                </span>
+                <button onClick={() => removeTeam(t.id)}
+                  className="text-slate-400 hover:text-red-400 transition-colors text-lg leading-none">
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-slate-300 text-sm">
+              <span className="font-bold text-white">{state.teams.length}</span> team{state.teams.length !== 1 ? 's' : ''} registered
+              {canStart && <span className="text-slate-400"> · {totalMatches} group matches</span>}
+            </p>
+            {!canStart && <p className="text-slate-500 text-xs mt-1">Add {4 - state.teams.length} more to start</p>}
+          </div>
+          <button onClick={startGroup} disabled={!canStart}
+            className="bg-brand text-slate-900 font-bold px-6 py-3 rounded-xl disabled:opacity-30 hover:bg-brand-dark transition-colors">
+            Start Group Phase →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Match Card (Organizer) ────────────────────────────────────────────────────
+
+function OrgMatchCard({ match, state, anyPlaying, reload }) {
+  const t1 = teamName(state, match.team1Id);
+  const t2 = teamName(state, match.team2Id);
+  const isPlaying = match.status === 'playing';
+  const isDone    = match.status === 'done';
+  const canStart  = match.status === 'pending' && !anyPlaying;
+  const nextRound = match.rounds.length + 1;
+
+  async function act(fn) { await fn(); reload(); }
+
+  const borderColor = isPlaying ? 'border-amber-500' : isDone ? 'border-green-700' : 'border-slate-700';
+
+  return (
+    <div className={`bg-slate-800 rounded-xl border ${borderColor} p-4 fade-in`}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          {match.label && <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">{match.label}</span>}
+        </div>
+        <StatusBadge status={match.status} />
+      </div>
+
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className={`flex-1 text-right ${match.winner === match.team1Id ? 'text-brand font-bold' : ''}`}>
+          <span className="text-lg">{t1}</span>
+        </div>
+        <div className="text-center min-w-[60px]">
+          <div className="text-2xl font-black">{match.score1}<span className="text-slate-600 mx-1">–</span>{match.score2}</div>
+          <RoundDots match={match} />
+        </div>
+        <div className={`flex-1 ${match.winner === match.team2Id ? 'text-brand font-bold' : ''}`}>
+          <span className="text-lg">{t2}</span>
+        </div>
+      </div>
+
+      {isPlaying && (
+        <div className="space-y-2">
+          <p className="text-slate-400 text-xs text-center font-medium">Round {nextRound} — Who won?</p>
+          <div className="flex gap-2">
+            <button onClick={() => act(() => api.post(`/api/matches/${match.id}/round`, { winner: 'team1' }))}
+              className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-3 rounded-lg transition-colors text-sm">
+              {t1}
+            </button>
+            <button onClick={() => act(() => api.post(`/api/matches/${match.id}/round`, { winner: 'team2' }))}
+              className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 px-3 rounded-lg transition-colors text-sm">
+              {t2}
+            </button>
+          </div>
+          {match.rounds.length > 0 && (
+            <button onClick={() => act(() => api.post(`/api/matches/${match.id}/undo`))}
+              className="w-full text-slate-400 hover:text-white text-xs py-1 transition-colors">
+              ↩ Undo last round
+            </button>
+          )}
+        </div>
+      )}
+
+      {isDone && (
+        <div className="text-center text-sm text-slate-400">
+          Winner: <span className="text-brand font-bold">{match.winner === match.team1Id ? t1 : t2}</span>
+        </div>
+      )}
+
+      {canStart && (
+        <button onClick={() => act(() => api.put(`/api/matches/${match.id}/play`))}
+          className="w-full mt-2 bg-slate-700 hover:bg-amber-600 hover:text-slate-900 text-white font-semibold py-2 rounded-lg transition-colors text-sm">
+          ▶ Start Match
+        </button>
+      )}
+
+      {match.status === 'pending' && anyPlaying && (
+        <p className="text-center text-slate-600 text-xs mt-2">Waiting for active match to finish</p>
+      )}
+    </div>
+  );
+}
+
+// ── Standings Table ───────────────────────────────────────────────────────────
+
+function Standings({ state, highlightTop = 4 }) {
+  return (
+    <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
+      <div className="px-4 py-3 border-b border-slate-700">
+        <h3 className="font-bold text-sm uppercase tracking-wide text-slate-300">Standings</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-slate-400 text-xs uppercase">
+              <th className="px-4 py-2 text-left">#</th>
+              <th className="px-4 py-2 text-left">Team</th>
+              <th className="px-4 py-2 text-center">W</th>
+              <th className="px-4 py-2 text-center">L</th>
+              <th className="px-4 py-2 text-center">RW</th>
+              <th className="px-4 py-2 text-center">Pts</th>
+            </tr>
+          </thead>
+          <tbody>
+            {state.standings.map((s, i) => {
+              const qualifies = i < highlightTop;
+              return (
+                <tr key={s.teamId} className={`border-t border-slate-700 ${qualifies ? 'bg-slate-700/30' : ''}`}>
+                  <td className="px-4 py-2.5">
+                    <span className={`font-bold ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-slate-300' : i === 2 ? 'text-amber-600' : 'text-slate-500'}`}>
+                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span className="font-semibold">{s.name}</span>
+                    {qualifies && state.teams.length > highlightTop && (
+                      <span className="ml-2 text-xs text-green-400 font-medium">Q</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-center text-green-400 font-bold">{s.wins}</td>
+                  <td className="px-4 py-2.5 text-center text-red-400">{s.losses}</td>
+                  <td className="px-4 py-2.5 text-center text-slate-400">{s.roundWins}</td>
+                  <td className="px-4 py-2.5 text-center font-black text-brand">{s.points}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Group Phase ───────────────────────────────────────────────────────────────
+
+function GroupPhase({ state, reload }) {
+  const groupMatches = state.matches.filter(m => m.phase === 'group');
+  const done    = groupMatches.filter(m => m.status === 'done').length;
+  const total   = groupMatches.length;
+  const allDone = done === total;
+  const anyPlaying = groupMatches.some(m => m.status === 'playing');
+
+  const sorted = [...groupMatches].sort((a, b) => {
+    const order = { playing: 0, pending: 1, done: 2 };
+    return order[a.status] - order[b.status];
+  });
+
+  async function startPlayoffs() {
+    if (!window.confirm('Start the Playoffs with the current top-4 standings?')) return;
+    const res = await api.post('/api/start-playoffs');
+    if (res.error) { alert(res.error); return; }
+    reload();
+  }
+
+  return (
+    <div className="fade-in">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-xl font-bold text-brand">Group Stage</h2>
+          <p className="text-slate-400 text-sm">{done}/{total} matches complete</p>
+        </div>
+        {allDone && (
+          <button onClick={startPlayoffs}
+            className="bg-brand text-slate-900 font-bold px-6 py-2.5 rounded-xl hover:bg-brand-dark transition-colors">
+            Start Playoffs →
+          </button>
+        )}
+      </div>
+
+      {/* Progress bar */}
+      <div className="bg-slate-700 rounded-full h-2 mb-6 overflow-hidden">
+        <div className="bg-brand h-2 rounded-full transition-all duration-500"
+             style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 space-y-3">
+          {sorted.map(m => (
+            <OrgMatchCard key={m.id} match={m} state={state} anyPlaying={anyPlaying} reload={reload} />
+          ))}
+        </div>
+        <div>
+          <Standings state={state} highlightTop={Math.min(4, state.teams.length)} />
+          {!allDone && anyPlaying === false && (
+            <p className="text-slate-500 text-xs text-center mt-3">
+              Start a match to record results
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Playoff Bracket (visual) ──────────────────────────────────────────────────
+
+function BracketBox({ match, state }) {
+  if (!match) return <div className="bg-slate-700/40 rounded-lg p-3 text-slate-600 text-sm text-center h-16 flex items-center justify-center">TBD</div>;
+  const t1 = teamName(state, match.team1Id);
+  const t2 = teamName(state, match.team2Id);
+  return (
+    <div className={`rounded-lg p-3 border text-sm ${match.status === 'playing' ? 'border-amber-500 bg-amber-900/20' : match.status === 'done' ? 'border-green-700 bg-green-900/10' : 'border-slate-700 bg-slate-800'}`}>
+      <div className={`font-semibold truncate ${match.winner === match.team1Id ? 'text-brand' : ''}`}>{t1}</div>
+      <div className="text-center text-slate-500 text-xs my-0.5 font-bold">{match.score1} – {match.score2}</div>
+      <div className={`font-semibold truncate ${match.winner === match.team2Id ? 'text-brand' : ''}`}>{t2}</div>
+    </div>
+  );
+}
+
+function PlayoffBracket({ state }) {
+  const sf1   = state.matches.find(m => m.phase === 'semifinal'   && m.label?.includes('1'));
+  const sf2   = state.matches.find(m => m.phase === 'semifinal'   && m.label?.includes('2'));
+  const tp    = state.matches.find(m => m.phase === 'third_place');
+  const final = state.matches.find(m => m.phase === 'final');
+
+  return (
+    <div className="bg-slate-800 rounded-2xl border border-slate-700 p-5 mb-6">
+      <h3 className="font-bold text-sm uppercase tracking-wide text-slate-300 mb-4">Bracket</h3>
+      <div className="grid grid-cols-3 gap-4 items-center">
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs text-slate-500 mb-1">Semifinal 1 · 1st vs 4th</p>
+            <BracketBox match={sf1} state={state} />
+          </div>
+          <div>
+            <p className="text-xs text-slate-500 mb-1">Semifinal 2 · 2nd vs 3rd</p>
+            <BracketBox match={sf2} state={state} />
+          </div>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs text-yellow-500 mb-1 font-semibold">🏆 Grand Final</p>
+            <BracketBox match={final} state={state} />
+          </div>
+          <div>
+            <p className="text-xs text-amber-600 mb-1 font-semibold">🥉 3rd Place</p>
+            <BracketBox match={tp} state={state} />
+          </div>
+        </div>
+        <div className="text-center">
+          {state.finalResults ? (
+            <div className="space-y-2">
+              {state.finalResults.map(r => (
+                <div key={r.place} className={`rounded-lg p-2 ${r.place === 1 ? 'bg-yellow-900/40 border border-yellow-600' : r.place === 2 ? 'bg-slate-700 border border-slate-500' : 'bg-slate-800 border border-slate-700'}`}>
+                  <div className="text-lg">{r.place === 1 ? '🥇' : r.place === 2 ? '🥈' : r.place === 3 ? '🥉' : '4️⃣'}</div>
+                  <div className="font-bold text-sm">{r.team?.name}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-slate-600 text-xs">Results appear here</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Playoffs Phase ────────────────────────────────────────────────────────────
+
+function PlayoffsPhase({ state, reload }) {
+  const semis  = state.matches.filter(m => m.phase === 'semifinal');
+  const tp     = state.matches.find(m => m.phase === 'third_place');
+  const final  = state.matches.find(m => m.phase === 'final');
+  const anyPlaying = state.matches.some(m => m.status === 'playing');
+  const semisAllDone = semis.length === 2 && semis.every(m => m.status === 'done');
+  const finalsGenerated = !!tp && !!final;
+
+  const playoffMatches = state.matches.filter(m => ['semifinal','third_place','final'].includes(m.phase));
+  const sorted = [...playoffMatches].sort((a, b) => {
+    const order = { playing: 0, pending: 1, done: 2 };
+    return order[a.status] - order[b.status];
+  });
+
+  async function genFinals() {
+    const res = await api.post('/api/generate-finals');
+    if (res.error) { alert(res.error); return; }
+    reload();
+  }
+
+  return (
+    <div className="fade-in">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-bold text-brand">Playoffs</h2>
+        {semisAllDone && !finalsGenerated && (
+          <button onClick={genFinals}
+            className="bg-brand text-slate-900 font-bold px-6 py-2.5 rounded-xl hover:bg-brand-dark transition-colors">
+            Generate Finals →
+          </button>
+        )}
+      </div>
+
+      <PlayoffBracket state={state} />
+
+      <div className="space-y-3">
+        {sorted.map(m => (
+          <OrgMatchCard key={m.id} match={m} state={state} anyPlaying={anyPlaying} reload={reload} />
+        ))}
+      </div>
+
+      {state.phase !== 'complete' && <Standings state={state} highlightTop={0} />}
+    </div>
+  );
+}
+
+// ── Complete Phase ────────────────────────────────────────────────────────────
+
+function CompletePhase({ state }) {
+  const res = state.finalResults || [];
+  const medals = ['🥇', '🥈', '🥉', '4️⃣'];
+  const colors = [
+    'from-yellow-900/50 to-yellow-800/20 border-yellow-500',
+    'from-slate-700/50 to-slate-800/20 border-slate-400',
+    'from-amber-900/50 to-amber-800/20 border-amber-600',
+    'from-slate-800/50 to-slate-900/20 border-slate-600',
+  ];
+
+  return (
+    <div className="fade-in text-center">
+      <h2 className="text-3xl font-black text-brand mb-2">Tournament Complete!</h2>
+      <p className="text-slate-400 mb-8">ZEM Sumo Mini — Final Results</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-2xl mx-auto mb-8">
+        {res.map((r, i) => (
+          <div key={r.place} className={`bg-gradient-to-b ${colors[i]} border rounded-2xl p-5`}>
+            <div className="text-4xl mb-2">{medals[i]}</div>
+            <div className="text-xs text-slate-400 uppercase tracking-wide mb-1">Place {r.place}</div>
+            <div className="font-bold text-base">{r.team?.name}</div>
+          </div>
+        ))}
+      </div>
+      <PlayoffBracket state={state} />
+    </div>
+  );
+}
+
+// ── Root App ──────────────────────────────────────────────────────────────────
+
+function App() {
+  const [state, setState] = useState(null);
+  const [conn,  setConn]  = useState(false);
+
+  const reload = useCallback(async () => {
+    const s = await api.get('/api/state');
+    setState(s);
+  }, []);
+
+  useEffect(() => {
+    const es = new EventSource('/api/events');
+    es.onopen    = () => setConn(true);
+    es.onerror   = () => setConn(false);
+    es.onmessage = e => { setState(JSON.parse(e.data)); setConn(true); };
+    return () => es.close();
+  }, []);
+
+  async function reset() {
+    if (!window.confirm('Reset the entire tournament? This cannot be undone.')) return;
+    await api.post('/api/reset');
+    reload();
+  }
+
+  const phase = state?.phase;
+  const phaseLabel = { setup: 'Setup', group: 'Group Stage', playoffs: 'Playoffs', complete: 'Complete' };
+
+  return (
+    <div className="min-h-screen">
+      {/* Header */}
+      <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🤖</span>
+            <div>
+              <span className="font-black text-white">ZEM Sumo</span>
+              <span className="text-slate-500 text-sm ml-2">Organizer</span>
+            </div>
+            {phase && (
+              <span className="hidden sm:block text-xs bg-slate-700 text-slate-300 px-3 py-1 rounded-full font-medium">
+                {phaseLabel[phase]}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <a href="/view" target="_blank"
+               className="text-xs text-slate-400 hover:text-brand transition-colors border border-slate-700 hover:border-brand px-3 py-1.5 rounded-lg">
+              👁 Viewer ↗
+            </a>
+            <div className={`w-2 h-2 rounded-full ${conn ? 'bg-green-500' : 'bg-red-500'}`} title={conn ? 'Connected' : 'Disconnected'} />
+            {phase !== 'setup' && (
+              <button onClick={reset} className="text-xs text-slate-600 hover:text-red-400 transition-colors">Reset</button>
+            )}
+          </div>
+        </div>
+        {/* Phase progress */}
+        {phase && (
+          <div className="max-w-6xl mx-auto px-4 pb-2">
+            <div className="flex gap-2">
+              {['setup','group','playoffs','complete'].map((p, i) => {
+                const phases = ['setup','group','playoffs','complete'];
+                const current = phases.indexOf(phase);
+                const isActive = p === phase;
+                const isPast = i < current;
+                return (
+                  <div key={p} className={`flex-1 h-1 rounded-full ${isActive ? 'bg-brand' : isPast ? 'bg-brand/40' : 'bg-slate-700'}`} />
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </header>
+
+      <main className="max-w-6xl mx-auto px-4 py-6">
+        {!state ? (
+          <div className="text-center text-slate-500 py-20">Connecting…</div>
+        ) : phase === 'setup' ? (
+          <SetupPhase state={state} reload={reload} />
+        ) : phase === 'group' ? (
+          <GroupPhase state={state} reload={reload} />
+        ) : phase === 'playoffs' || phase === 'complete' ? (
+          phase === 'complete' ? <CompletePhase state={state} /> : <PlayoffsPhase state={state} reload={reload} />
+        ) : null}
+      </main>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZEM Sumo – Live</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter','sans-serif'] },
+          colors: { brand: { DEFAULT: '#f59e0b', dark: '#d97706', light: '#fde68a' } }
+        }
+      }
+    }
+  </script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { background: #0f172a; color: #f8fafc; }
+    .live-pulse { animation: livePulse 2s ease-in-out infinite; }
+    @keyframes livePulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.6; }
+    }
+    .glow { box-shadow: 0 0 30px rgba(245,158,11,0.25); }
+    .fade-in { animation: fadeIn 0.4s ease; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+    ::-webkit-scrollbar { width:6px; } ::-webkit-scrollbar-track { background:#1e293b; }
+    ::-webkit-scrollbar-thumb { background:#475569; border-radius:3px; }
+  </style>
+</head>
+<body class="font-sans min-h-screen">
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+function teamName(state, id) {
+  return (state.teams.find(t => t.id === id) || {}).name || '?';
+}
+
+// ── Round dots ────────────────────────────────────────────────────────────────
+
+function RoundDots({ match, size = 'md' }) {
+  const sz = size === 'lg' ? 'w-5 h-5' : 'w-3.5 h-3.5';
+  return (
+    <div className="flex gap-1.5 items-center justify-center">
+      {[0,1,2].map(i => {
+        const r = match.rounds[i];
+        let cls = `${sz} rounded-full border-2 `;
+        if (!r)                    cls += 'border-slate-600 bg-transparent';
+        else if (r.winner==='team1') cls += 'border-blue-400 bg-blue-400';
+        else                         cls += 'border-red-400 bg-red-400';
+        return <span key={i} className={cls} />;
+      })}
+    </div>
+  );
+}
+
+// ── Now Playing ───────────────────────────────────────────────────────────────
+
+function NowPlaying({ match, state }) {
+  const t1 = teamName(state, match.team1Id);
+  const t2 = teamName(state, match.team2Id);
+  const nextRound = match.rounds.length + 1;
+
+  return (
+    <div className="glow bg-gradient-to-b from-amber-900/30 to-slate-800 border border-amber-500 rounded-3xl p-6 sm:p-8 mb-6 fade-in">
+      <div className="flex items-center gap-2 mb-4 justify-center">
+        <span className="live-pulse w-3 h-3 bg-red-500 rounded-full" />
+        <span className="text-red-400 font-bold text-sm uppercase tracking-widest">Live</span>
+        {match.label && <span className="text-slate-400 text-sm">· {match.label}</span>}
+      </div>
+
+      <div className="flex items-center justify-center gap-6 sm:gap-12 mb-6">
+        <div className={`text-center flex-1 ${match.winner === match.team1Id ? 'text-brand' : ''}`}>
+          <div className="text-2xl sm:text-4xl font-black leading-tight">{t1}</div>
+        </div>
+
+        <div className="text-center flex-shrink-0">
+          <div className="text-5xl sm:text-7xl font-black text-white">
+            {match.score1}<span className="text-slate-600 mx-2">–</span>{match.score2}
+          </div>
+          <div className="mt-3">
+            <RoundDots match={match} size="lg" />
+          </div>
+          <div className="text-slate-500 text-xs mt-2">Round {nextRound}</div>
+        </div>
+
+        <div className={`text-center flex-1 ${match.winner === match.team2Id ? 'text-brand' : ''}`}>
+          <div className="text-2xl sm:text-4xl font-black leading-tight">{t2}</div>
+        </div>
+      </div>
+
+      {match.rounds.length > 0 && (
+        <div className="flex justify-center gap-2 flex-wrap">
+          {match.rounds.map((r, i) => (
+            <div key={i} className={`text-xs px-3 py-1 rounded-full font-medium ${r.winner==='team1' ? 'bg-blue-800/60 text-blue-200' : 'bg-red-800/60 text-red-200'}`}>
+              R{i+1}: {r.winner === 'team1' ? t1 : t2}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Match Row ─────────────────────────────────────────────────────────────────
+
+function MatchRow({ match, state }) {
+  const t1 = teamName(state, match.team1Id);
+  const t2 = teamName(state, match.team2Id);
+  const isDone    = match.status === 'done';
+  const isPending = match.status === 'pending';
+
+  return (
+    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${isDone ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-800 border-slate-700'}`}>
+      {match.label && (
+        <span className="text-slate-500 text-xs w-28 flex-shrink-0 hidden sm:block truncate">{match.label}</span>
+      )}
+      <div className={`flex-1 text-right font-semibold text-sm truncate ${match.winner === match.team1Id ? 'text-brand' : isDone ? 'text-slate-400' : ''}`}>
+        {t1}
+      </div>
+      <div className="text-center flex-shrink-0 min-w-[80px]">
+        {isPending ? (
+          <span className="text-slate-600 font-bold text-sm">vs</span>
+        ) : (
+          <span className={`font-black text-base ${isDone ? 'text-white' : 'text-brand'}`}>
+            {match.score1} – {match.score2}
+          </span>
+        )}
+      </div>
+      <div className={`flex-1 font-semibold text-sm truncate ${match.winner === match.team2Id ? 'text-brand' : isDone ? 'text-slate-400' : ''}`}>
+        {t2}
+      </div>
+      <div className="flex-shrink-0 w-16 text-right">
+        {isDone ? (
+          <span className="text-xs bg-green-900/60 text-green-300 px-2 py-0.5 rounded-full">Done</span>
+        ) : isPending ? (
+          <span className="text-xs text-slate-600">Pending</span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ── Standings ─────────────────────────────────────────────────────────────────
+
+function Standings({ state }) {
+  return (
+    <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
+      <div className="px-4 py-3 border-b border-slate-700 flex items-center gap-2">
+        <span className="font-bold text-sm uppercase tracking-wide text-slate-300">Standings</span>
+        {state.phase === 'group' && <span className="text-xs text-slate-500">— Top 4 advance</span>}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-slate-500 text-xs uppercase">
+              <th className="px-4 py-2 text-left">#</th>
+              <th className="px-4 py-2 text-left">Team</th>
+              <th className="px-4 py-2 text-center">W</th>
+              <th className="px-4 py-2 text-center">L</th>
+              <th className="px-4 py-2 text-center hidden sm:table-cell">Rounds</th>
+              <th className="px-4 py-2 text-center">Pts</th>
+            </tr>
+          </thead>
+          <tbody>
+            {state.standings.map((s, i) => {
+              const top4 = i < 4;
+              const medalEmoji = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : null;
+              return (
+                <tr key={s.teamId} className={`border-t border-slate-700/50 ${top4 ? 'bg-slate-700/20' : ''}`}>
+                  <td className="px-4 py-3 text-lg">
+                    {medalEmoji || <span className="text-slate-600 text-sm font-bold">{i+1}</span>}
+                  </td>
+                  <td className="px-4 py-3 font-semibold">
+                    {s.name}
+                    {top4 && state.phase === 'group' && state.teams.length > 4 && (
+                      <span className="ml-2 text-xs text-green-400">Q</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-center text-green-400 font-bold">{s.wins}</td>
+                  <td className="px-4 py-3 text-center text-red-400">{s.losses}</td>
+                  <td className="px-4 py-3 text-center text-slate-400 hidden sm:table-cell">
+                    {s.roundWins}/{s.roundWins + s.roundLosses}
+                  </td>
+                  <td className="px-4 py-3 text-center font-black text-brand text-base">{s.points}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Bracket view ──────────────────────────────────────────────────────────────
+
+function BracketSlot({ match, state, label, accentColor = 'border-slate-600' }) {
+  if (!match) {
+    return (
+      <div className="bg-slate-800 rounded-xl border border-slate-700 p-3 text-center text-slate-600 text-sm h-20 flex items-center justify-center">
+        {label || 'TBD'}
+      </div>
+    );
+  }
+  const t1 = teamName(state, match.team1Id);
+  const t2 = teamName(state, match.team2Id);
+  const borderClass = match.status === 'playing'
+    ? 'border-amber-500 bg-amber-900/10'
+    : match.status === 'done'
+    ? 'border-green-700 bg-green-900/10'
+    : 'border-slate-700 bg-slate-800';
+
+  return (
+    <div className={`rounded-xl border ${borderClass} p-3`}>
+      <div className={`text-xs text-slate-500 mb-1.5 font-medium`}>{match.label}</div>
+      <div className={`flex justify-between items-center text-sm font-semibold ${match.winner === match.team1Id ? 'text-brand' : match.status === 'done' ? 'text-slate-400' : 'text-white'}`}>
+        <span className="truncate flex-1">{t1}</span>
+        <span className="ml-2 font-black text-white">{match.score1}</span>
+      </div>
+      <div className={`flex justify-between items-center text-sm font-semibold mt-1 ${match.winner === match.team2Id ? 'text-brand' : match.status === 'done' ? 'text-slate-400' : 'text-white'}`}>
+        <span className="truncate flex-1">{t2}</span>
+        <span className="ml-2 font-black text-white">{match.score2}</span>
+      </div>
+      {match.status === 'playing' && (
+        <div className="mt-2"><RoundDots match={match} /></div>
+      )}
+    </div>
+  );
+}
+
+function PlayoffBracket({ state }) {
+  const sf1   = state.matches.find(m => m.phase === 'semifinal'   && m.label?.includes('1'));
+  const sf2   = state.matches.find(m => m.phase === 'semifinal'   && m.label?.includes('2'));
+  const tp    = state.matches.find(m => m.phase === 'third_place');
+  const final = state.matches.find(m => m.phase === 'final');
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-6 fade-in">
+      <h3 className="font-bold text-sm uppercase tracking-wide text-slate-300 mb-4">Playoff Bracket</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="space-y-3">
+          <BracketSlot match={sf1} state={state} label="Semifinal 1" />
+          <BracketSlot match={sf2} state={state} label="Semifinal 2" />
+        </div>
+        <div className="space-y-3">
+          <BracketSlot match={final} state={state} label="Grand Final" />
+          <BracketSlot match={tp} state={state} label="3rd Place" />
+        </div>
+        {state.finalResults && (
+          <div>
+            <h4 className="text-xs text-slate-500 uppercase font-medium mb-2">Final Results</h4>
+            <div className="space-y-2">
+              {state.finalResults.map(r => (
+                <div key={r.place} className={`flex items-center gap-3 rounded-xl px-4 py-2.5 border ${r.place===1?'border-yellow-500 bg-yellow-900/20':r.place===2?'border-slate-500 bg-slate-700/30':'border-slate-700 bg-slate-800'}`}>
+                  <span className="text-xl">{r.place===1?'🥇':r.place===2?'🥈':r.place===3?'🥉':'4️⃣'}</span>
+                  <span className="font-bold">{r.team?.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Complete screen ───────────────────────────────────────────────────────────
+
+function CompleteScreen({ state }) {
+  const res = state.finalResults || [];
+  const medals = ['🥇','🥈','🥉','4️⃣'];
+  const bg = ['from-yellow-900/40 to-yellow-800/10 border-yellow-500','from-slate-700/40 border-slate-400','from-amber-900/30 border-amber-600','border-slate-600'];
+
+  return (
+    <div className="text-center fade-in py-8">
+      <h2 className="text-4xl font-black text-brand mb-2">Tournament Over!</h2>
+      <p className="text-slate-400 mb-10">ZEM Sumo Mini · Final Results</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-xl mx-auto mb-8">
+        {res.map((r,i)=>(
+          <div key={r.place} className={`bg-gradient-to-b ${bg[i]} border rounded-2xl p-5`}>
+            <div className="text-5xl mb-2">{medals[i]}</div>
+            <div className="text-xs text-slate-400 uppercase tracking-wide mb-1">{r.place}. Place</div>
+            <div className="font-bold">{r.team?.name}</div>
+          </div>
+        ))}
+      </div>
+      <PlayoffBracket state={state} />
+    </div>
+  );
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+
+function App() {
+  const [state, setState] = useState(null);
+  const [conn,  setConn]  = useState(false);
+
+  useEffect(() => {
+    const es = new EventSource('/api/events');
+    es.onopen    = () => setConn(true);
+    es.onerror   = () => { setConn(false); };
+    es.onmessage = e => { setState(JSON.parse(e.data)); setConn(true); };
+    return () => es.close();
+  }, []);
+
+  if (!state) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-slate-500 text-lg">Connecting to tournament…</div>
+      </div>
+    );
+  }
+
+  const { phase } = state;
+  const playingMatch = state.matches.find(m => m.status === 'playing');
+  const groupMatches  = state.matches.filter(m => m.phase === 'group');
+  const pendingGroup  = groupMatches.filter(m => m.status === 'pending');
+  const doneGroup     = groupMatches.filter(m => m.status === 'done');
+  const phaseLabel    = { setup:'Setup', group:'Group Stage', playoffs:'Playoffs', complete:'Complete' };
+
+  return (
+    <div className="min-h-screen">
+      {/* Header */}
+      <header className="bg-slate-900/95 backdrop-blur border-b border-slate-800 sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🤖</span>
+            <div>
+              <span className="font-black text-white text-lg">ZEM Sumo</span>
+              <span className="text-slate-500 text-sm ml-2">Live Viewer</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {phase && (
+              <span className="text-xs bg-slate-700 text-slate-300 px-3 py-1 rounded-full font-medium">
+                {phaseLabel[phase]}
+              </span>
+            )}
+            <div className="flex items-center gap-1.5">
+              <div className={`w-2 h-2 rounded-full ${conn ? 'bg-green-500 live-pulse' : 'bg-red-500'}`} />
+              <span className="text-xs text-slate-500">{conn ? 'Live' : 'Offline'}</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-4xl mx-auto px-4 py-6">
+
+        {/* Complete */}
+        {phase === 'complete' && <CompleteScreen state={state} />}
+
+        {/* Setup waiting */}
+        {phase === 'setup' && (
+          <div className="text-center py-20 fade-in">
+            <div className="text-6xl mb-4">⏳</div>
+            <h2 className="text-2xl font-bold text-slate-300 mb-2">Tournament starting soon</h2>
+            <p className="text-slate-500">The organizer is setting up teams.</p>
+          </div>
+        )}
+
+        {/* Group or Playoffs */}
+        {(phase === 'group' || phase === 'playoffs') && (
+          <>
+            {/* Now Playing */}
+            {playingMatch ? (
+              <NowPlaying match={playingMatch} state={state} />
+            ) : (
+              <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-5 mb-6 text-center fade-in">
+                <span className="text-slate-500">No match in progress right now</span>
+              </div>
+            )}
+
+            {/* Playoffs bracket */}
+            {phase === 'playoffs' && <PlayoffBracket state={state} />}
+
+            {/* Two columns: standings + matches */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+              {/* Standings */}
+              <div className="lg:col-span-2">
+                <Standings state={state} />
+              </div>
+
+              {/* Matches */}
+              <div className="lg:col-span-3 space-y-4">
+                {/* Done matches */}
+                {doneGroup.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                      Completed ({doneGroup.length})
+                    </h3>
+                    <div className="space-y-1.5">
+                      {doneGroup.map(m => <MatchRow key={m.id} match={m} state={state} />)}
+                    </div>
+                  </div>
+                )}
+
+                {/* Pending matches */}
+                {pendingGroup.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                      Upcoming ({pendingGroup.length})
+                    </h3>
+                    <div className="space-y-1.5">
+                      {pendingGroup.map(m => <MatchRow key={m.id} match={m} state={state} />)}
+                    </div>
+                  </div>
+                )}
+
+                {/* Playoff matches */}
+                {phase === 'playoffs' && (() => {
+                  const pm = state.matches.filter(m => ['semifinal','third_place','final'].includes(m.phase));
+                  const pmDone = pm.filter(m => m.status === 'done');
+                  const pmPending = pm.filter(m => m.status === 'pending');
+                  return (
+                    <>
+                      {pmDone.length > 0 && (
+                        <div>
+                          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Playoff Results</h3>
+                          <div className="space-y-1.5">{pmDone.map(m => <MatchRow key={m.id} match={m} state={state} />)}</div>
+                        </div>
+                      )}
+                      {pmPending.length > 0 && (
+                        <div>
+                          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Upcoming Playoffs</h3>
+                          <div className="space-y-1.5">{pmPending.map(m => <MatchRow key={m.id} match={m} state={state} />)}</div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
