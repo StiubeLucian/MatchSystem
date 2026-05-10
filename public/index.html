@@ -54,8 +54,9 @@ function teamName(state, id) {
 }
 
 function RoundDots({ match }) {
+  const max = match.maxRounds || 3;
   const dots = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < max; i++) {
     const r = match.rounds[i];
     let cls = 'w-4 h-4 rounded-full border-2 ';
     if (!r) cls += 'border-slate-600 bg-transparent';
@@ -178,10 +179,12 @@ function SetupPhase({ state, reload }) {
 function OrgMatchCard({ match, state, anyPlaying, reload }) {
   const t1 = teamName(state, match.team1Id);
   const t2 = teamName(state, match.team2Id);
-  const isPlaying = match.status === 'playing';
-  const isDone    = match.status === 'done';
-  const canStart  = match.status === 'pending' && !anyPlaying;
-  const nextRound = match.rounds.length + 1;
+  const isPlaying  = match.status === 'playing';
+  const isDone     = match.status === 'done';
+  const canStart   = match.status === 'pending' && !anyPlaying;
+  const maxRounds  = match.maxRounds || 3;
+  const nextRound  = match.rounds.length + 1;
+  const allPlayed  = match.rounds.length >= maxRounds;
 
   async function act(fn) { await fn(); reload(); }
 
@@ -211,17 +214,23 @@ function OrgMatchCard({ match, state, anyPlaying, reload }) {
 
       {isPlaying && (
         <div className="space-y-2">
-          <p className="text-slate-400 text-xs text-center font-medium">Round {nextRound} — Who won?</p>
-          <div className="flex gap-2">
-            <button onClick={() => act(() => api.post(`/api/matches/${match.id}/round`, { winner: 'team1' }))}
-              className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-3 rounded-lg transition-colors text-sm">
-              {t1}
-            </button>
-            <button onClick={() => act(() => api.post(`/api/matches/${match.id}/round`, { winner: 'team2' }))}
-              className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 px-3 rounded-lg transition-colors text-sm">
-              {t2}
-            </button>
-          </div>
+          {allPlayed ? (
+            <p className="text-slate-400 text-xs text-center font-medium">All {maxRounds} rounds played</p>
+          ) : (
+            <p className="text-slate-400 text-xs text-center font-medium">Round {nextRound} of {maxRounds} — Who won?</p>
+          )}
+          {!allPlayed && (
+            <div className="flex gap-2">
+              <button onClick={() => act(() => api.post(`/api/matches/${match.id}/round`, { winner: 'team1' }))}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-3 rounded-lg transition-colors text-sm">
+                {t1}
+              </button>
+              <button onClick={() => act(() => api.post(`/api/matches/${match.id}/round`, { winner: 'team2' }))}
+                className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 px-3 rounded-lg transition-colors text-sm">
+                {t2}
+              </button>
+            </div>
+          )}
           {match.rounds.length > 0 && (
             <button onClick={() => act(() => api.post(`/api/matches/${match.id}/undo`))}
               className="w-full text-slate-400 hover:text-white text-xs py-1 transition-colors">

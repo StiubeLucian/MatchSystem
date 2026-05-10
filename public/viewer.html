@@ -46,12 +46,13 @@ function teamName(state, id) {
 
 function RoundDots({ match, size = 'md' }) {
   const sz = size === 'lg' ? 'w-5 h-5' : 'w-3.5 h-3.5';
+  const max = match.maxRounds || 3;
   return (
     <div className="flex gap-1.5 items-center justify-center">
-      {[0,1,2].map(i => {
+      {Array.from({ length: max }, (_, i) => {
         const r = match.rounds[i];
         let cls = `${sz} rounded-full border-2 `;
-        if (!r)                    cls += 'border-slate-600 bg-transparent';
+        if (!r)                      cls += 'border-slate-600 bg-transparent';
         else if (r.winner==='team1') cls += 'border-blue-400 bg-blue-400';
         else                         cls += 'border-red-400 bg-red-400';
         return <span key={i} className={cls} />;
@@ -65,6 +66,7 @@ function RoundDots({ match, size = 'md' }) {
 function NowPlaying({ match, state }) {
   const t1 = teamName(state, match.team1Id);
   const t2 = teamName(state, match.team2Id);
+  const maxRounds = match.maxRounds || 3;
   const nextRound = match.rounds.length + 1;
 
   return (
@@ -87,7 +89,7 @@ function NowPlaying({ match, state }) {
           <div className="mt-3">
             <RoundDots match={match} size="lg" />
           </div>
-          <div className="text-slate-500 text-xs mt-2">Round {nextRound}</div>
+          <div className="text-slate-500 text-xs mt-2">Round {nextRound} of {maxRounds}</div>
         </div>
 
         <div className={`text-center flex-1 ${match.winner === match.team2Id ? 'text-brand' : ''}`}>

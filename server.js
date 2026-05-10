@@ -141,7 +141,7 @@ app.post('/api/start-group', (req, res) => {
       matches.push({
         id: randomUUID(), phase: 'group', label: null,
         team1Id: teams[i].id, team2Id: teams[j].id,
-        rounds: [], score1: 0, score2: 0,
+        rounds: [], score1: 0, score2: 0, maxRounds: 3,
         status: 'pending', winner: null
       });
     }
@@ -161,10 +161,10 @@ app.post('/api/start-playoffs', (req, res) => {
 
   const top4 = calcStandings(state).slice(0, 4);
 
-  const makeMatch = (phase, label, t1, t2) => ({
+  const makeMatch = (phase, label, t1, t2, maxRounds = 3) => ({
     id: randomUUID(), phase, label,
     team1Id: t1, team2Id: t2,
-    rounds: [], score1: 0, score2: 0,
+    rounds: [], score1: 0, score2: 0, maxRounds,
     status: 'pending', winner: null
   });
 
@@ -185,16 +185,16 @@ app.post('/api/generate-finals', (req, res) => {
     return res.status(400).json({ error: 'Semifinals not complete' });
 
   const loser = m => m.winner === m.team1Id ? m.team2Id : m.team1Id;
-  const makeMatch = (phase, label, t1, t2) => ({
+  const makeMatch = (phase, label, t1, t2, maxRounds = 3) => ({
     id: randomUUID(), phase, label,
     team1Id: t1, team2Id: t2,
-    rounds: [], score1: 0, score2: 0,
+    rounds: [], score1: 0, score2: 0, maxRounds,
     status: 'pending', winner: null
   });
 
   state.matches.push(
-    makeMatch('third_place', '3rd Place Match',    loser(semis[0]), loser(semis[1])),
-    makeMatch('final',       'Grand Final',        semis[0].winner, semis[1].winner)
+    makeMatch('third_place', '3rd Place Match', loser(semis[0]), loser(semis[1]), 3),
+    makeMatch('final',       'Grand Final',     semis[0].winner, semis[1].winner, 5)
   );
   saveState(state);
   res.json({ ok: true });
@@ -234,15 +234,18 @@ app.post('/api/matches/:id/round', (req, res) => {
   const { winner } = req.body;
   if (!['team1', 'team2'].includes(winner)) return res.status(400).json({ error: 'Invalid winner' });
 
+  const maxRounds = match.maxRounds || 3;
+  if (match.rounds.length >= maxRounds) return res.status(400).json({ error: 'All rounds already played' });
+
   match.rounds.push({ winner });
   if (winner === 'team1') match.score1++; else match.score2++;
 
-  if (match.score1 === 2 || match.score2 === 2) {
+  if (match.rounds.length === maxRounds) {
     match.status = 'done';
-    match.winner = match.score1 === 2 ? match.team1Id : match.team2Id;
+    match.winner = match.score1 > match.score2 ? match.team1Id : match.team2Id;
 
-    const allDone = state.matches.filter(m => m.phase === 'final' && m.status === 'done').length > 0 &&
-                    state.matches.filter(m => m.phase === 'third_place' && m.status === 'done').length > 0;
+    const allDone = state.matches.some(m => m.phase === 'final'       && m.status === 'done') &&
+                    state.matches.some(m => m.phase === 'third_place'  && m.status === 'done');
     if (allDone) state.phase = 'complete';
   }
 
