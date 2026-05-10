@@ -7,6 +7,8 @@ const app = express();
 const PORT = 3000;
 const DATA_FILE = path.join(__dirname, 'data', 'tournament.json');
 
+fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
