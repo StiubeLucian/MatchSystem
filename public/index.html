@@ -89,11 +89,15 @@ function SetupPhase({ state, reload }) {
   async function addTeam(e) {
     e.preventDefault();
     setErr('');
-    const res = await api.post('/api/teams', { name });
-    if (res.error) { setErr(res.error); return; }
-    setName('');
-    inputRef.current?.focus();
-    reload();
+    try {
+      const res = await api.post('/api/teams', { name });
+      if (res.error) { setErr(res.error); return; }
+      setName('');
+      inputRef.current?.focus();
+      reload();
+    } catch (ex) {
+      setErr('Cannot reach server — make sure "npm start" is running and open http://localhost:3000 (not the file directly). Error: ' + ex.message);
+    }
   }
 
   async function removeTeam(id) {
